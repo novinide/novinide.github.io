@@ -9,12 +9,5 @@ import Image from 'next/image'
 
 export function DamIllustration({ className }: { className?: string }) {
 
-  return (
-    <Image
-      src="/profile.png"
-      width={500}
-      height={500}
-      alt="Picture of the author"
-    />
-  )
+    return <Image src={`profile.png`} alt={alt} width="640" height="640" />
 }
