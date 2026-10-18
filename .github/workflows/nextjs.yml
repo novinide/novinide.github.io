@@ -1,0 +1,102 @@
+# =============================================================================
+# Deploy the Mansour Fadaei portfolio (Next.js) to GitHub Pages
+#
+# One-time setup in your GitHub repository:
+#   Settings → Pages → Build and deployment → Source: "GitHub Actions"
+#
+# How it works:
+#   1. Detects whether this is a user/org site (<user>.github.io) or a
+#      project site (<user>.github.io/<repo>) and computes the basePath.
+#   2. Installs dependencies with Bun (the project ships a bun.lock).
+#   3. Runs `next build` with DEPLOY_TARGET=pages, which switches
+#      next.config.ts into static-export mode and writes ./out.
+#   4. Uploads ./out and deploys it with the official Pages actions.
+#
+# Resulting URL:
+#   https://<user>.github.io/<repo>/   (project site)
+#   https://<user>.github.io/          (user site)
+# =============================================================================
+
+name: Deploy portfolio to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  # Allow manual runs from the Actions tab
+  workflow_dispatch:
+
+# Permissions required by actions/deploy-pages (OIDC token exchange)
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment; do NOT cancel in-progress runs
+# so a deployment is never left half-finished.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Project pages are served from https://<user>.github.io/<repo>/ so
+      # Next.js needs basePath = <repo>. User pages (<user>.github.io)
+      # need no basePath. This step detects which case we are in.
+      - name: Detect basePath (repo name or empty for user site)
+        id: base
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          if [ "$REPO_NAME" = "$OWNER.github.io" ]; then
+            echo "base_path=" >> "$GITHUB_OUTPUT"
+          else
+            echo "base_path=$REPO_NAME" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        # The repo ships bun.lock, so Bun gives a reproducible install.
+        # (Alternative: `npm install` — a package-lock.json is not included.)
+        run: bun install --frozen-lockfile
+
+      - name: Build static site
+        env:
+          # Switches next.config.ts to output: "export" (static HTML in ./out)
+          DEPLOY_TARGET: pages
+          # basePath for project sites; empty for <user>.github.io sites
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base.outputs.base_path }}
+        run: bun run build:pages
+
+      # Jekyll is not involved in the Actions deploy flow, but this costs
+      # nothing and keeps folders like _next/ safe if the source ever
+      # changes to branch-based deployment.
+      - name: Add .nojekyll
+        run: touch out/.nojekyll
+
+      - name: Upload static site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
